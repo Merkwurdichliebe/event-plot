@@ -1,6 +1,6 @@
 """
 plot.py
-This script read a data file of daily events and plots them on a graph
+This script reads a data file of daily events and plots them on a graph
 with accompanying statistics using matplotlib.
 
 The data file should have the following format for each day:
@@ -22,7 +22,7 @@ import matplotlib.dates as mdates
 
 # For adding dates axis left/right margins
 # and using the datetime format
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 
 # For counting frequency of events on the same date
 from collections import Counter
@@ -39,6 +39,14 @@ events = []
 comments = []
 events_per_day = []
 deltas = []
+
+def normalized_event_time(event):
+	"""Return the time of a datetime event normalized to a value between 0 and 1."""
+	# date2num takes a datetime and converts it to matplotlib float notation,
+	# counting whole days from 1900 with decimals as fractions 24 hours.
+	# With modulo 1 we just extract the time from the datetime objects
+	# and convert it to a value between 0.0 and 1.0
+	return mdates.date2num(event) % 1
 
 # Read the data file
 with open('data.txt', 'r', encoding='utf-8') as f:
@@ -82,17 +90,27 @@ comments = list(reversed(comments))
 # Build list of time deltas between all events
 deltas = [y - x for x,y in zip(events,events[1:])]
 
-# List of the dates extracted from the datetime objects
-# This will be the main scatter x axis value
-event_dates = [e.date() for e in events]
+# Build list of dates and times for all events and for long nights without events
+long_nights_x = []
+long_nights_y = []
+event_dates = []
+event_times = []
 
-# List of the times extracted from the datetime objects
-# date2num takes a datetime and converts it to matplotlib float notation,
-# counting whole days from 1900 with decimals as fractions 24 hours.
-# With modulo 1 we just extract the time from the datetime objects
-# and convert it to a value between 0.0 and 1.0
-# This will be the main scatter y axis value
-event_times = [mdates.date2num(e) % 1 for e in events]
+for i, e in enumerate(events):
+
+	# List of the dates extracted from the datetime objects
+	# This will be the main scatter x axis value
+	event_dates.append(e.date())
+
+	# List of the times extracted from the datetime objects
+	# This will be the main scatter y axis value
+	event_times.append(normalized_event_time(e))
+
+	# x and y lists of dates and times of long nights without events
+	# We want time periods of more than 6 hours ending between 6h30 and 8h00
+	if e - events[i-1] >= timedelta(hours=(6)) and e.time() < time(hour=8) and e.time() > time(hour=6, minute=30): 
+		long_nights_x.append(e.date())
+		long_nights_y.append(normalized_event_time(e))
 
 # Counter (from 'collections' module) creates a dictionary where
 # key = date, value = frequency
@@ -146,22 +164,31 @@ average_over_period_normalized = [n / (median * 2) for n in average_over_period]
 # Calculate min, max and average delta
 # Giving datetime.timedelta(0) as the start value makes sum work on timedeltas
 # (https://stackoverflow.com/questions/3617170/average-timedelta-in-list)
-delta_min = str(min(deltas)) + ' on ' + str(events[deltas.index(min(deltas))])
-delta_max = str(max(deltas)) + ' on ' + str(events[deltas.index(max(deltas))])
-delta_average = str(sum(deltas, timedelta(0)) / len(deltas))
+# We use only the first 3 characters from the string. It's a tiny hack because
+# deltas never have two digits, so we don't deal with them.
+delta_min = str(min(deltas))[:4] + ' on ' + str(events[deltas.index(min(deltas))].date())
+delta_max = str(max(deltas))[:4] + ' on ' + str(events[deltas.index(max(deltas))].date())
+delta_average = str(sum(deltas, timedelta(0)) / len(deltas))[:4]
 
-print('Today              : ' + str(today))
-print('Days recorded      : ' + str(len(events_per_day)))
-print('Events recorded    : ' + str(sum(events_per_day)))
-print('Min events per day : ' + str(events_per_day[0]))
-print('Max events per day : ' + str(events_per_day[-1]))
-print('Per day average    : ' + "%.2f" % average)
-print('Per day median     : ' + "%.2f" % median)
-print('Per day midrange   : ' + "%.2f" % midrange)
-print('Std deviation      : ' + "%.2f" % standard_dev)
-print('Min delta          : ' + delta_min)
-print('Max delta          : ' + delta_max)
-print('Average delta      : ' + delta_average)
+# Print stats
+stats = {
+	'Today' : today,
+	'Days recorded' : len(events_per_day),
+	'Events recorded' : sum(events_per_day),
+	'Min events per day' : events_per_day_sorted[0],
+	'Max events per day' : events_per_day_sorted[-1],
+	'Per day average' : "%.2f" % average,
+	'Per day median' : "%.2f" % median,
+	'Per day midrange' : "%.2f" % midrange,
+	'Std deviation' : "%.2f" % standard_dev,
+	'Min delta' : delta_min,
+	'Max delta' : delta_max,
+	'Average delta' : delta_average,
+	'Long nights' : len(long_nights_x)
+}
+
+for key, value in stats.items():
+	print('{:>18} : {}'.format(key, str(value)))
 
 # Plot horizontal lines of median, min and max values
 plt.axhline(median/(median * 2), color='#ff4d4d')
@@ -183,6 +210,9 @@ plt.plot(unique_dates, average_over_period_normalized, color='#00b300')
 
 # Plot the count line
 plt.plot(unique_dates, events_per_day_normalized, marker='o', markersize=3)
+
+# Plot the long nights bars
+plt.bar(long_nights_x, long_nights_y, width=0.1, alpha=0.5, color='#d147a3', linewidth=0)
 
 # Plot the comments
 # enumerate returns an index and an element in a tuple
